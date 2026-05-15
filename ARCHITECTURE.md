@@ -1,0 +1,62 @@
+# Indah Cell POS Architecture
+
+## Stack
+
+- React + Vite + TypeScript
+- Tailwind CSS
+- Supabase Data API with localStorage fallback
+- Modular state management via `src/store/useCart.ts`
+
+## Folder Structure
+
+```txt
+src/
+  components/
+    AppShell.tsx        # Responsive layout, sidebar, bottom nav
+    MiniBarChart.tsx    # Dashboard revenue chart
+    ProductModal.tsx    # Add/edit product form
+    ReceiptModal.tsx    # Thermal/PDF/WhatsApp receipt
+    StatCard.tsx        # Analytics cards
+  data/
+    seed.ts             # Indah Cell demo products/settings
+  lib/
+    repository.ts       # Supabase + localStorage persistence layer
+    supabase.ts         # Supabase client setup
+  store/
+    useCart.ts          # Cart state management and totals
+  utils/
+    format.ts           # Money/date/invoice/receipt helpers
+  App.tsx               # Main feature composition
+  constants.ts          # Tabs, status, payment constants
+  types.ts              # Domain types
+```
+
+## Database Architecture
+
+Use `supabase/schema.sql`.
+
+Core tables:
+
+- `products`: SKU, name, category, type, price, cost, stock, min stock, active flag.
+- `customers`: customer identity and notes.
+- `sales`: invoice, payment method/status, transaction status, subtotal, discount, tax, total, paid, change.
+- `sale_items`: sold product snapshot, digital target, category, item status, item notes.
+- `expenses`: operational expense tracking.
+- `settings`: shop profile and receipt configuration.
+- `inventory_movements`: future-ready stock movement audit.
+
+Important Supabase notes:
+
+- RLS is enabled on public tables.
+- `anon` and `authenticated` are granted table access because new Supabase projects may not expose tables to the Data API automatically.
+- Current demo policy is permissive for a single-store POS. For production multi-user, replace policies with Auth-based rules.
+
+## Feature Map
+
+- Dashboard analytics: `App.tsx`, `StatCard.tsx`, `MiniBarChart.tsx`
+- POS cashier: `App.tsx`, `useCart.ts`
+- Digital target input: `App.tsx`, `utils/format.ts`
+- Inventory CRUD: `App.tsx`, `ProductModal.tsx`, `repository.ts`
+- Transaction history filters: `App.tsx`
+- Receipt print/PDF/WhatsApp: `ReceiptModal.tsx`
+- Supabase integration: `supabase.ts`, `repository.ts`, `supabase/schema.sql`
