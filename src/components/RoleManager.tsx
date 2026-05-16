@@ -5,8 +5,8 @@ import type { UserRole, UserRoleRecord } from '../types';
 type RoleManagerProps = {
   roles: UserRoleRecord[];
   saving: boolean;
-  onSave: (record: UserRoleRecord) => Promise<void> | void;
-  onDelete: (userId: string) => Promise<void> | void;
+  onSave: (record: UserRoleRecord) => Promise<boolean | void> | boolean | void;
+  onDelete: (userId: string) => Promise<boolean | void> | boolean | void;
 };
 
 const roleOptions: UserRole[] = ['owner', 'admin', 'kasir'];
@@ -26,12 +26,13 @@ export const RoleManager = ({ roles, saving, onSave, onDelete }: RoleManagerProp
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!draft.user_id.trim()) return;
-    await onSave({
+    const saved = await onSave({
       ...draft,
       user_id: draft.user_id.trim(),
       full_name: draft.full_name.trim(),
       updated_at: new Date().toISOString(),
     });
+    if (saved === false) return;
     setDraft(emptyDraft());
   };
 

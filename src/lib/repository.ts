@@ -1,67 +1,55 @@
-import { createDefaultData, defaultSettings, seedProducts, uuid } from '../data/seed';
+import { defaultSettings, seedProducts, uuid } from '../data/seed';
 import { supabase } from './supabase';
 import type { Announcement, AppData, Customer, Expense, Product, Sale, ShopSettings, UserRoleRecord } from '../types';
 
-const LOCAL_KEY = 'indah-cell-pos-data-v1';
+const LEGACY_LOCAL_DATA_KEY = 'indah-cell-pos-data-v1';
 const LEGACY_LOCAL_ANNOUNCEMENTS_KEY = 'indah-cell-pos-announcements-v1';
 
 type LoadResult = {
   data: AppData;
-  source: 'supabase' | 'local';
+  source: 'supabase' | 'offline';
   error?: string;
+};
+
+type StockAdjustment = {
+  product_id: string;
+  quantity: number;
 };
 
 export const todayIso = () => new Date().toISOString();
 
 export const normalizeNumber = (value: unknown) => Number(value ?? 0);
 
-const isOptionalSupabaseTableError = (error: unknown, tableName: string) => {
-  if (!error || typeof error !== 'object') return false;
-  const maybeError = error as { code?: string; message?: string };
-  const message = maybeError.message?.toLowerCase() ?? '';
-  return (
-    maybeError.code === '42P01' ||
-    maybeError.code === 'PGRST205' ||
-    message.includes(tableName.toLowerCase())
-  );
+const requireSupabaseClient = () => {
+  const client = supabase;
+  if (!client) throw new Error('Supabase belum dikonfigurasi.');
+  return client;
 };
 
-export const readLocalData = (): AppData => {
-  const raw = localStorage.getItem(LOCAL_KEY);
-  if (!raw) {
-    const fresh = createDefaultData();
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(fresh));
-    return fresh;
-  }
+const createDisconnectedData = (): AppData => ({
+  products: [],
+  customers: [
+    {
+      id: uuid(),
+      name: 'Pelanggan Umum',
+      phone: '',
+      notes: '',
+      created_at: todayIso(),
+    },
+  ],
+  sales: [],
+  expenses: [],
+  settings: { ...defaultSettings },
+});
 
-  try {
-    const parsed = JSON.parse(raw) as AppData;
-    return {
-      ...createDefaultData(),
-      ...parsed,
-      products: parsed.products ?? [],
-      customers: parsed.customers ?? [],
-      sales: parsed.sales ?? [],
-      expenses: parsed.expenses ?? [],
-      settings: { ...defaultSettings, ...(parsed.settings ?? {}) },
-    };
-  } catch {
-    const fresh = createDefaultData();
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(fresh));
-    return fresh;
-  }
-};
-
-export const writeLocalData = (data: AppData) => {
-  localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+const clearLegacyLocalCache = () => {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem(LEGACY_LOCAL_DATA_KEY);
+  localStorage.removeItem(LEGACY_LOCAL_ANNOUNCEMENTS_KEY);
 };
 
 export const isAnnouncementActive = (announcement: Announcement, now = new Date()) =>
   announcement.active && (!announcement.expires_at || new Date(announcement.expires_at).getTime() > now.getTime());
-
-const clearLegacyAnnouncementCache = () => {
-  localStorage.removeItem(LEGACY_LOCAL_ANNOUNCEMENTS_KEY);
-};
 
 const sanitizeProduct = (product: Product) => ({
   ...product,
@@ -78,8 +66,7 @@ const sanitizeSale = (sale: Sale) => {
 };
 
 const loadFromSupabase = async (): Promise<AppData> => {
-  const client = supabase;
-  if (!client) throw new Error('Supabase belum dikonfigurasi.');
+  const client = requireSupabaseClient();
 
   const [productsRes, customersRes, salesRes, itemsRes, expensesRes, settingsRes] = await Promise.all([
     client.from('products').select('*').order('name', { ascending: true }),
@@ -144,20 +131,26 @@ const loadFromSupabase = async (): Promise<AppData> => {
 };
 
 export const loadData = async (): Promise<LoadResult> => {
-  if (!supabase) return { data: readLocalData(), source: 'local' };
+  clearLegacyLocalCache();
+  if (!supabase) {
+    return {
+      data: createDisconnectedData(),
+      source: 'offline',
+      error: 'Supabase belum dikonfigurasi. Data tidak akan disimpan lokal.',
+    };
+  }
 
   try {
     const data = await loadFromSupabase();
-    writeLocalData(data);
     return { data, source: 'supabase' };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Supabase gagal dimuat.';
-    return { data: readLocalData(), source: 'local', error: message };
+    return { data: createDisconnectedData(), source: 'offline', error: message };
   }
 };
 
 export const loadActiveAnnouncements = async () => {
-  clearLegacyAnnouncementCache();
+  clearLegacyLocalCache();
   const client = supabase;
   if (!client) return [];
 
@@ -175,18 +168,16 @@ export const loadActiveAnnouncements = async () => {
 };
 
 export const saveAnnouncement = async (announcement: Announcement) => {
-  clearLegacyAnnouncementCache();
-  const client = supabase;
-  if (!client) throw new Error('Supabase belum dikonfigurasi.');
+  clearLegacyLocalCache();
+  const client = requireSupabaseClient();
 
   const { error } = await client.from('announcements').insert(announcement);
   if (error) throw error;
 };
 
 export const archiveAnnouncement = async (id: string) => {
-  clearLegacyAnnouncementCache();
-  const client = supabase;
-  if (!client) throw new Error('Supabase belum dikonfigurasi.');
+  clearLegacyLocalCache();
+  const client = requireSupabaseClient();
 
   const { error } = await client.from('announcements').update({ active: false, updated_at: todayIso() }).eq('id', id);
   if (error) throw error;
@@ -230,92 +221,64 @@ export const loadUserRoles = async () => {
 };
 
 export const saveUserRole = async (record: UserRoleRecord) => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
 
   const { error } = await client.from('users_roles').upsert(record, { onConflict: 'user_id' });
   if (error) throw error;
 };
 
 export const deleteUserRoleRemote = async (userId: string) => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
 
   const { error } = await client.from('users_roles').delete().eq('user_id', userId);
   if (error) throw error;
 };
 
 export const saveProduct = async (product: Product) => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
   const payload = sanitizeProduct(product);
   const { error } = await client.from('products').upsert(payload, { onConflict: 'id' });
   if (error) throw error;
 };
 
 export const saveCustomer = async (customer: Customer) => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
   const { error } = await client.from('customers').upsert(customer, { onConflict: 'id' });
   if (error) throw error;
 };
 
 export const saveExpense = async (expense: Expense) => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
   const { error } = await client.from('expenses').upsert(expense, { onConflict: 'id' });
   if (error) throw error;
 };
 
 export const saveSettings = async (settings: ShopSettings) => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
   const { error } = await client.from('settings').upsert(settings, { onConflict: 'id' });
   if (error) throw error;
 };
 
 export const deleteCustomerRemote = async (id: string) => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
   const { error } = await client.from('customers').delete().eq('id', id);
   if (error) throw error;
 };
 
 export const deleteExpenseRemote = async (id: string) => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
   const { error } = await client.from('expenses').delete().eq('id', id);
   if (error) throw error;
 };
 
 export const deleteProductRemote = async (id: string) => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
   const { error } = await client.from('products').delete().eq('id', id);
   if (error) throw error;
 };
 
-export const recordSale = async (sale: Sale, updatedProducts: Product[]) => {
-  const client = supabase;
-  if (!client) return;
-
-  const { error: saleError } = await client.from('sales').insert(sanitizeSale(sale));
-  if (saleError) throw saleError;
-
-  const itemsPayload = sale.items.map((item) => ({ ...item, sale_id: sale.id }));
-  const { error: itemsError } = await client.from('sale_items').insert(itemsPayload);
-  if (itemsError) throw itemsError;
-
-  await Promise.all(
-    updatedProducts.map(async (product) => {
-      const { error } = await client
-        .from('products')
-        .update({ stock: product.stock, updated_at: todayIso() })
-        .eq('id', product.id);
-      if (error) throw error;
-    }),
-  );
-
+export const recordSale = async (sale: Sale, stockAdjustments: StockAdjustment[]) => {
+  const client = requireSupabaseClient();
   const transactionPayload = {
     id: sale.id,
     sale_id: sale.id,
@@ -346,13 +309,18 @@ export const recordSale = async (sale: Sale, updatedProducts: Product[]) => {
     created_at: sale.created_at,
   };
 
-  const { error: transactionError } = await client.from('transactions').insert(transactionPayload);
-  if (transactionError && !isOptionalSupabaseTableError(transactionError, 'transactions')) throw transactionError;
+  const { error } = await client.rpc('checkout_sale', {
+    p_sale: sanitizeSale(sale),
+    p_items: sale.items.map((item) => ({ ...item, sale_id: sale.id })),
+    p_stock_adjustments: stockAdjustments,
+    p_transaction: transactionPayload,
+  });
+
+  if (error) throw error;
 };
 
 export const seedRemoteData = async () => {
-  const client = supabase;
-  if (!client) return;
+  const client = requireSupabaseClient();
 
   const products = seedProducts.map((product) => ({
     ...product,
@@ -385,10 +353,4 @@ export const seedRemoteData = async () => {
 export const exportJson = (data: AppData) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   return URL.createObjectURL(blob);
-};
-
-export const resetLocalDemo = () => {
-  const fresh = createDefaultData();
-  writeLocalData(fresh);
-  return fresh;
 };

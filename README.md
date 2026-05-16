@@ -11,7 +11,7 @@ POS modern untuk konter HP Indah Cell: pulsa reguler, paketan/kuota internet, to
 - Stok otomatis berkurang saat transaksi, plus kontrol stok cepat.
 - Dashboard analytics, notifikasi stok menipis, riwayat filter tanggal/kategori/status, dan cetak ulang struk.
 - Struk thermal print-ready, bisa dicetak atau disimpan sebagai PDF dari dialog print browser, plus share ke WhatsApp.
-- Backup/import JSON dan mode demo lokal saat Supabase belum dikonfigurasi.
+- Export JSON read-only dan proteksi data remote-first: jika Supabase gagal, operasi gagal dan tidak disimpan lokal.
 
 Lihat detail arsitektur di `ARCHITECTURE.md`.
 
@@ -22,7 +22,7 @@ npm install
 npm run dev
 ```
 
-Tanpa `.env`, aplikasi otomatis memakai mode demo lokal lewat `localStorage`, jadi semua fitur tetap bisa dicoba.
+Supabase wajib dikonfigurasi untuk operasi data. Tanpa `.env`, aplikasi masuk mode offline read-only dan tidak menyimpan data ke browser.
 
 ## Supabase
 
@@ -38,7 +38,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
 
 5. Jalankan ulang `npm run dev`.
 
-Schema sudah mengaktifkan RLS, role access, dan Supabase Realtime publication untuk tabel operasional.
+Schema sudah mengaktifkan RLS, role access, fungsi checkout atomic, dan Supabase Realtime publication untuk tabel operasional.
 
 ## Role User
 

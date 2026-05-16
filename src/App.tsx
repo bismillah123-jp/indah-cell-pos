@@ -19,7 +19,6 @@ import {
   Smartphone,
   Trash2,
   TrendingUp,
-  Upload,
   WalletCards,
   X,
 } from 'lucide-react';
@@ -46,13 +45,11 @@ import {
   loadData,
   loadUserRoles,
   recordSale,
-  resetLocalDemo,
   saveAnnouncement,
   saveProduct,
   saveSettings,
   saveUserRole,
   todayIso,
-  writeLocalData,
 } from './lib/repository';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
 import { useCart } from './store/useCart';
@@ -171,7 +168,7 @@ const App = () => {
   const canManageOperations = managerRoles.includes(appRole);
   const canViewFinancialReports = appRole === 'owner';
   const [loading, setLoading] = useState(true);
-  const [connection, setConnection] = useState<{ source: 'supabase' | 'local'; error?: string }>({ source: 'local' });
+  const [connection, setConnection] = useState<{ source: 'supabase' | 'offline'; error?: string }>({ source: 'offline' });
   const [toast, setToast] = useState('');
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [announcementNow, setAnnouncementNow] = useState(() => Date.now());
@@ -200,7 +197,6 @@ const App = () => {
   const [historyCategory, setHistoryCategory] = useState<ProductCategory | 'Semua'>('Semua');
   const [historyStatus, setHistoryStatus] = useState<SaleStatus | 'Semua'>('Semua');
 
-  const importInputRef = useRef<HTMLInputElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const popupTimersRef = useRef<number[]>([]);
   const realtimeSyncTimerRef = useRef<number | null>(null);
@@ -214,7 +210,6 @@ const App = () => {
 
   const commitData = (next: AppData) => {
     setData(next);
-    writeLocalData(next);
   };
 
   const refreshBestSellerCounts = useCallback(async (sales: Sale[]) => {
@@ -576,14 +571,18 @@ const App = () => {
       const sold = soldStock.get(product.id) ?? 0;
       return sold ? { ...product, stock: Math.max(product.stock - sold, 0), updated_at: todayIso() } : product;
     });
-    const changedProducts = nextProducts.filter((product) => soldStock.has(product.id));
+    const stockAdjustments = Array.from(soldStock.entries()).map(([productId, quantity]) => ({
+      product_id: productId,
+      quantity,
+    }));
     const nextData = { ...data, products: nextProducts, sales: [sale, ...data.sales] };
 
     try {
-      await recordSale(sale, changedProducts);
+      await recordSale(sale, stockAdjustments);
       setConnection((current) => ({ ...current, error: undefined }));
     } catch (error) {
-      showToast(`Checkout tersimpan lokal, Supabase gagal: ${errorMessage(error, 'Gagal sinkron Supabase.')}`);
+      showToast(`Checkout gagal, tidak ada data disimpan: ${errorMessage(error, 'Gagal sinkron Supabase.')}`);
+      return;
     }
 
     commitData(nextData);
@@ -618,33 +617,35 @@ const App = () => {
     const nextProducts = exists
       ? data.products.map((item) => (item.id === clean.id ? clean : item))
       : [clean, ...data.products];
-    commitData({ ...data, products: nextProducts });
-    setProductDraft(null);
 
     try {
       await saveProduct(clean);
+      commitData({ ...data, products: nextProducts });
+      setProductDraft(null);
+      showToast('Produk disimpan.');
     } catch (error) {
-      showToast(`Produk belum tersinkron ke Supabase: ${errorMessage(error, 'Gagal simpan produk.')}`);
+      showToast(`Produk gagal disimpan: ${errorMessage(error, 'Gagal simpan produk.')}`);
     }
   };
 
   const deleteProduct = async (product: Product) => {
-    commitData({ ...data, products: data.products.filter((item) => item.id !== product.id) });
     try {
       await deleteProductRemote(product.id);
+      commitData({ ...data, products: data.products.filter((item) => item.id !== product.id) });
+      showToast('Produk dihapus.');
     } catch (error) {
-      showToast(`Hapus produk belum tersinkron ke Supabase: ${errorMessage(error, 'Gagal hapus produk.')}`);
+      showToast(`Produk gagal dihapus: ${errorMessage(error, 'Gagal hapus produk.')}`);
     }
   };
 
   const saveShopSettings = async () => {
     const settings = { ...settingsDraft, tax_rate: toNumber(settingsDraft.tax_rate) };
-    commitData({ ...data, settings });
     try {
       await saveSettings(settings);
+      commitData({ ...data, settings });
       showToast('Setting disimpan.');
     } catch (error) {
-      showToast(`Setting belum tersinkron ke Supabase: ${errorMessage(error, 'Gagal simpan setting.')}`);
+      showToast(`Setting gagal disimpan: ${errorMessage(error, 'Gagal simpan setting.')}`);
     }
   };
 
@@ -688,24 +689,28 @@ const App = () => {
   const persistUserRole = async (record: UserRoleRecord) => {
     const clean = { ...record, updated_at: todayIso() };
     setSavingRole(true);
-    setUserRoles((current) => [clean, ...current.filter((item) => item.user_id !== clean.user_id)]);
     try {
       await saveUserRole(clean);
+      setUserRoles((current) => [clean, ...current.filter((item) => item.user_id !== clean.user_id)]);
       showToast('Role disimpan.');
+      return true;
     } catch (error) {
       showToast(`Role gagal disinkronkan: ${errorMessage(error, 'Gagal simpan role.')}`);
+      return false;
     } finally {
       setSavingRole(false);
     }
   };
 
   const deleteUserRole = async (userId: string) => {
-    setUserRoles((current) => current.filter((role) => role.user_id !== userId));
     try {
       await deleteUserRoleRemote(userId);
+      setUserRoles((current) => current.filter((role) => role.user_id !== userId));
       showToast('Role dihapus.');
+      return true;
     } catch (error) {
       showToast(`Role gagal dihapus di Supabase: ${errorMessage(error, 'Gagal hapus role.')}`);
+      return false;
     }
   };
 
@@ -716,12 +721,6 @@ const App = () => {
     anchor.download = `backup-indah-cell-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-  };
-
-  const importBackup = async (file: File) => {
-    const parsed = JSON.parse(await file.text()) as AppData;
-    commitData({ ...createDefaultData(), ...parsed });
-    showToast('Backup berhasil di-import.');
   };
 
   if (auth.loading || loading) {
@@ -1223,28 +1222,9 @@ const App = () => {
             <h2 className="text-lg font-black text-earth-900">Backup & Database</h2>
             <div className="mt-4 grid gap-3">
               <button className="btn-soft w-full" onClick={downloadBackup}><Download size={17} /> Export JSON</button>
-              <button className="btn-soft w-full" onClick={() => importInputRef.current?.click()}><Upload size={17} /> Import JSON</button>
-              <input
-                ref={importInputRef}
-                className="hidden"
-                type="file"
-                accept="application/json"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) importBackup(file).catch(() => showToast('File backup tidak valid.'));
-                  event.currentTarget.value = '';
-                }}
-              />
-              <button
-                className="btn-danger w-full"
-                onClick={() => {
-                  const fresh = resetLocalDemo();
-                  commitData(fresh);
-                  setSettingsDraft(fresh.settings);
-                }}
-              >
-                <Trash2 size={17} /> Reset Demo Lokal
-              </button>
+              <div className="rounded-2xl border border-earth-200 bg-earth-50 p-4 text-sm font-semibold text-earth-600">
+                Import dan reset lokal dimatikan supaya tidak ada data kasir yang tersimpan di browser.
+              </div>
             </div>
             <div className="mt-5 rounded-2xl bg-earth-50 p-4 text-sm">
               <strong className="block text-earth-900">{hasSupabaseConfig ? 'Supabase dikonfigurasi' : 'Supabase belum dikonfigurasi'}</strong>

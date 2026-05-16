@@ -4,7 +4,7 @@
 
 - React + Vite + TypeScript
 - Tailwind CSS
-- Supabase Data API with localStorage fallback
+- Supabase Data API with remote-first writes and no browser data fallback
 - Modular state management via `src/store/useCart.ts`
 
 ## Folder Structure
@@ -20,7 +20,7 @@ src/
   data/
     seed.ts             # Indah Cell demo products/settings
   lib/
-    repository.ts       # Supabase + localStorage persistence layer
+    repository.ts       # Supabase persistence layer; failures stay failed
     supabase.ts         # Supabase client setup
   store/
     useCart.ts          # Cart state management and totals
@@ -54,6 +54,8 @@ Important Supabase notes:
 - `anon` and `authenticated` are granted table access because new Supabase projects may not expose tables to the Data API automatically.
 - RBAC policies protect cashier writes, owner-only role management, and manager-only operational settings.
 - Realtime publication covers operational tables so clients can sync automatically without manual refresh.
+- Checkout uses `public.checkout_sale(...)` RPC so sale, items, transaction log, and stock decrement commit atomically.
+- The app clears legacy browser caches and does not write POS data to localStorage when Supabase is missing or failing.
 
 ## Feature Map
 

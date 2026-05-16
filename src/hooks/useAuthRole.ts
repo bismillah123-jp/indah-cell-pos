@@ -50,7 +50,7 @@ export const useAuthRole = () => {
         session: null,
         user: null,
         role: 'owner',
-        userEmail: 'Demo lokal',
+        userEmail: 'Supabase belum dikonfigurasi',
         demoMode: true,
       });
       return;

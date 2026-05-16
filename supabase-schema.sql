@@ -211,6 +211,179 @@ $$;
 
 revoke all on function private.guard_product_kasir_update() from public, anon, authenticated;
 
+drop function if exists public.checkout_sale(jsonb, jsonb, jsonb, jsonb);
+create or replace function public.checkout_sale(
+  p_sale jsonb,
+  p_items jsonb,
+  p_stock_adjustments jsonb,
+  p_transaction jsonb
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  stock_item record;
+  updated_count integer;
+begin
+  insert into public.sales (
+    id,
+    invoice_no,
+    customer_id,
+    customer_name,
+    subtotal,
+    discount,
+    tax,
+    total,
+    paid,
+    change,
+    payment_method,
+    payment_status,
+    transaction_status,
+    cashier,
+    notes,
+    created_by,
+    created_at
+  )
+  values (
+    (p_sale->>'id')::uuid,
+    p_sale->>'invoice_no',
+    nullif(p_sale->>'customer_id', '')::uuid,
+    coalesce(p_sale->>'customer_name', 'Pelanggan Umum'),
+    coalesce((p_sale->>'subtotal')::numeric, 0),
+    coalesce((p_sale->>'discount')::numeric, 0),
+    coalesce((p_sale->>'tax')::numeric, 0),
+    coalesce((p_sale->>'total')::numeric, 0),
+    coalesce((p_sale->>'paid')::numeric, 0),
+    coalesce((p_sale->>'change')::numeric, 0),
+    coalesce(p_sale->>'payment_method', 'Tunai'),
+    coalesce(p_sale->>'payment_status', 'Lunas'),
+    coalesce(p_sale->>'transaction_status', 'Sukses'),
+    coalesce(p_sale->>'cashier', 'Kasir'),
+    coalesce(p_sale->>'notes', ''),
+    auth.uid(),
+    coalesce((p_sale->>'created_at')::timestamptz, now())
+  );
+
+  insert into public.sale_items (
+    id,
+    sale_id,
+    product_id,
+    sku,
+    product_name,
+    quantity,
+    price,
+    cost,
+    discount,
+    line_total,
+    item_type,
+    item_category,
+    digital_target,
+    notes,
+    status,
+    created_at
+  )
+  select
+    item.id,
+    item.sale_id,
+    item.product_id,
+    item.sku,
+    item.product_name,
+    item.quantity,
+    item.price,
+    item.cost,
+    item.discount,
+    item.line_total,
+    item.item_type,
+    coalesce(item.item_category, 'Aksesoris'),
+    coalesce(item.digital_target, ''),
+    coalesce(item.notes, ''),
+    coalesce(item.status, coalesce(p_sale->>'transaction_status', 'Sukses')),
+    coalesce(item.created_at, now())
+  from jsonb_to_recordset(p_items) as item (
+    id uuid,
+    sale_id uuid,
+    product_id uuid,
+    sku text,
+    product_name text,
+    quantity numeric,
+    price numeric,
+    cost numeric,
+    discount numeric,
+    line_total numeric,
+    item_type text,
+    item_category text,
+    digital_target text,
+    notes text,
+    status text,
+    created_at timestamptz
+  );
+
+  for stock_item in
+    select *
+    from jsonb_to_recordset(p_stock_adjustments) as item (product_id uuid, quantity integer)
+  loop
+    if stock_item.quantity > 0 then
+      update public.products
+      set stock = stock - stock_item.quantity,
+          updated_at = now()
+      where id = stock_item.product_id
+        and stock >= stock_item.quantity;
+
+      get diagnostics updated_count = row_count;
+      if updated_count <> 1 then
+        raise exception 'Stok produk tidak cukup atau produk tidak ditemukan.';
+      end if;
+    end if;
+  end loop;
+
+  insert into public.transactions (
+    id,
+    sale_id,
+    invoice_no,
+    customer_name,
+    subtotal,
+    discount,
+    tax,
+    total,
+    paid,
+    change,
+    payment_method,
+    payment_status,
+    transaction_status,
+    cashier,
+    notes,
+    items,
+    created_by,
+    created_at
+  )
+  values (
+    (p_transaction->>'id')::uuid,
+    (p_transaction->>'sale_id')::uuid,
+    p_transaction->>'invoice_no',
+    coalesce(p_transaction->>'customer_name', 'Pelanggan Umum'),
+    coalesce((p_transaction->>'subtotal')::numeric, 0),
+    coalesce((p_transaction->>'discount')::numeric, 0),
+    coalesce((p_transaction->>'tax')::numeric, 0),
+    coalesce((p_transaction->>'total')::numeric, 0),
+    coalesce((p_transaction->>'paid')::numeric, 0),
+    coalesce((p_transaction->>'change')::numeric, 0),
+    coalesce(p_transaction->>'payment_method', 'Tunai'),
+    coalesce(p_transaction->>'payment_status', 'Lunas'),
+    coalesce(p_transaction->>'transaction_status', 'Sukses'),
+    coalesce(p_transaction->>'cashier', 'Kasir'),
+    coalesce(p_transaction->>'notes', ''),
+    coalesce(p_transaction->'items', '[]'::jsonb),
+    auth.uid(),
+    coalesce((p_transaction->>'created_at')::timestamptz, now())
+  );
+end;
+$$;
+
+revoke all on function public.checkout_sale(jsonb, jsonb, jsonb, jsonb) from public, anon;
+grant execute on function public.checkout_sale(jsonb, jsonb, jsonb, jsonb) to authenticated;
+
 drop trigger if exists products_set_updated_at on public.products;
 create trigger products_set_updated_at
 before update on public.products
