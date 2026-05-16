@@ -769,7 +769,7 @@ values
   ('PLN-100K', 'Token PLN 100K', 'Digital', 'digital', 103000, 100000, 0, 0, 'trx'),
   ('SVC-LEM', 'Jasa Lem LCD / Backdoor', 'Jasa', 'service', 30000, 5000, 0, 0, 'jasa'),
   ('SVC-LAGU', 'Isi Lagu / Playlist', 'Jasa', 'service', 20000, 0, 0, 0, 'jasa'),
-  ('SVC-PASANG-TG', 'Jasa Pasang Tempered', 'Jasa', 'service', 10000, 0, 0, 'jasa')
+  ('SVC-PASANG-TG', 'Jasa Pasang Tempered', 'Jasa', 'service', 10000, 0, 0, 0, 'jasa')
 on conflict (sku) do nothing;
 
 -- Bootstrap owner after creating the first Supabase Auth user:
