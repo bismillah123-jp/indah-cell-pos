@@ -756,21 +756,47 @@ insert into public.customers (name, phone, notes)
 values ('Pelanggan Umum', '', '')
 on conflict do nothing;
 
+with seed_products as (
+  select *
+  from jsonb_to_recordset($$[
+    {"sku":"ACC-TG-001","name":"Tempered Glass Universal","category":"Aksesoris","type":"stock","price":25000,"cost":10000,"stock":24,"min_stock":6,"unit":"pcs"},
+    {"sku":"ACC-SC-002","name":"Softcase Silikon","category":"Aksesoris","type":"stock","price":35000,"cost":18000,"stock":18,"min_stock":5,"unit":"pcs"},
+    {"sku":"ACC-CH-003","name":"Charger Type-C 2A","category":"Aksesoris","type":"stock","price":45000,"cost":28000,"stock":12,"min_stock":4,"unit":"pcs"},
+    {"sku":"ACC-KB-004","name":"Kabel Data 2 Meter","category":"Aksesoris","type":"stock","price":30000,"cost":16000,"stock":15,"min_stock":5,"unit":"pcs"},
+    {"sku":"ACC-HS-005","name":"Headset Kabel","category":"Aksesoris","type":"stock","price":25000,"cost":12000,"stock":10,"min_stock":4,"unit":"pcs"},
+    {"sku":"PKT-5GB","name":"Kuota Internet 5GB","category":"Digital","type":"digital","price":35000,"cost":31000,"stock":0,"min_stock":0,"unit":"trx"},
+    {"sku":"PKT-20GB","name":"Kuota Internet 20GB","category":"Digital","type":"digital","price":92000,"cost":86000,"stock":0,"min_stock":0,"unit":"trx"},
+    {"sku":"PUL-50K","name":"Isi Pulsa 50K","category":"Digital","type":"digital","price":53000,"cost":50000,"stock":0,"min_stock":0,"unit":"trx"},
+    {"sku":"PLN-100K","name":"Token PLN 100K","category":"Digital","type":"digital","price":103000,"cost":100000,"stock":0,"min_stock":0,"unit":"trx"},
+    {"sku":"SVC-LEM","name":"Jasa Lem LCD / Backdoor","category":"Jasa","type":"service","price":30000,"cost":5000,"stock":0,"min_stock":0,"unit":"jasa"},
+    {"sku":"SVC-LAGU","name":"Isi Lagu / Playlist","category":"Jasa","type":"service","price":20000,"cost":0,"stock":0,"min_stock":0,"unit":"jasa"},
+    {"sku":"SVC-PASANG-TG","name":"Jasa Pasang Tempered","category":"Jasa","type":"service","price":10000,"cost":0,"stock":0,"min_stock":0,"unit":"jasa"}
+  ]$$::jsonb) as product (
+    sku text,
+    name text,
+    category text,
+    type text,
+    price numeric,
+    cost numeric,
+    stock integer,
+    min_stock integer,
+    unit text
+  )
+)
 insert into public.products (sku, name, category, type, price, cost, stock, min_stock, unit)
-values
-  ('ACC-TG-001', 'Tempered Glass Universal', 'Aksesoris', 'stock', 25000, 10000, 24, 6, 'pcs'),
-  ('ACC-SC-002', 'Softcase Silikon', 'Aksesoris', 'stock', 35000, 18000, 18, 5, 'pcs'),
-  ('ACC-CH-003', 'Charger Type-C 2A', 'Aksesoris', 'stock', 45000, 28000, 12, 4, 'pcs'),
-  ('ACC-KB-004', 'Kabel Data 2 Meter', 'Aksesoris', 'stock', 30000, 16000, 15, 5, 'pcs'),
-  ('ACC-HS-005', 'Headset Kabel', 'Aksesoris', 'stock', 25000, 12000, 10, 4, 'pcs'),
-  ('PKT-5GB', 'Kuota Internet 5GB', 'Digital', 'digital', 35000, 31000, 0, 0, 'trx'),
-  ('PKT-20GB', 'Kuota Internet 20GB', 'Digital', 'digital', 92000, 86000, 0, 0, 'trx'),
-  ('PUL-50K', 'Isi Pulsa 50K', 'Digital', 'digital', 53000, 50000, 0, 0, 'trx'),
-  ('PLN-100K', 'Token PLN 100K', 'Digital', 'digital', 103000, 100000, 0, 0, 'trx'),
-  ('SVC-LEM', 'Jasa Lem LCD / Backdoor', 'Jasa', 'service', 30000, 5000, 0, 0, 'jasa'),
-  ('SVC-LAGU', 'Isi Lagu / Playlist', 'Jasa', 'service', 20000, 0, 0, 0, 'jasa'),
-  ('SVC-PASANG-TG', 'Jasa Pasang Tempered', 'Jasa', 'service', 10000, 0, 0, 0, 'jasa')
-on conflict (sku) do nothing;
+select sku, name, category, type, price, cost, stock, min_stock, unit
+from seed_products
+on conflict (sku) do update
+set
+  name = excluded.name,
+  category = excluded.category,
+  type = excluded.type,
+  price = excluded.price,
+  cost = excluded.cost,
+  min_stock = excluded.min_stock,
+  unit = excluded.unit,
+  active = true,
+  updated_at = now();
 
 -- Bootstrap owner after creating the first Supabase Auth user:
 -- insert into public.users_roles (user_id, role, full_name)
