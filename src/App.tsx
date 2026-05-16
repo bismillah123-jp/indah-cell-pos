@@ -171,6 +171,7 @@ const App = () => {
   const [connection, setConnection] = useState<{ source: 'supabase' | 'local'; error?: string }>({ source: 'local' });
   const [toast, setToast] = useState('');
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [announcementNow, setAnnouncementNow] = useState(() => Date.now());
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
   const [userRoles, setUserRoles] = useState<UserRoleRecord[]>([]);
   const [savingRole, setSavingRole] = useState(false);
@@ -276,6 +277,11 @@ const App = () => {
     }
   }, [currentView, loading]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setAnnouncementNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const productSorter = useCallback(
     (a: Product, b: Product) =>
       (bestSellerCounts[b.id] ?? 0) - (bestSellerCounts[a.id] ?? 0) ||
@@ -285,8 +291,8 @@ const App = () => {
   );
 
   const activeAnnouncements = useMemo(
-    () => announcements.filter((announcement) => isAnnouncementActive(announcement)),
-    [announcements],
+    () => announcements.filter((announcement) => isAnnouncementActive(announcement, new Date(announcementNow))),
+    [announcementNow, announcements],
   );
 
   const products = useMemo(

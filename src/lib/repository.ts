@@ -15,6 +15,17 @@ export const todayIso = () => new Date().toISOString();
 
 export const normalizeNumber = (value: unknown) => Number(value ?? 0);
 
+const isOptionalSupabaseTableError = (error: unknown, tableName: string) => {
+  if (!error || typeof error !== 'object') return false;
+  const maybeError = error as { code?: string; message?: string };
+  const message = maybeError.message?.toLowerCase() ?? '';
+  return (
+    maybeError.code === '42P01' ||
+    maybeError.code === 'PGRST205' ||
+    message.includes(tableName.toLowerCase())
+  );
+};
+
 export const readLocalData = (): AppData => {
   const raw = localStorage.getItem(LOCAL_KEY);
   if (!raw) {
@@ -183,7 +194,7 @@ export const saveAnnouncement = async (announcement: Announcement) => {
   if (!client) return;
 
   const { error } = await client.from('announcements').insert(announcement);
-  if (error) throw error;
+  if (error && !isOptionalSupabaseTableError(error, 'announcements')) throw error;
 };
 
 export const archiveAnnouncement = async (id: string) => {
@@ -196,7 +207,7 @@ export const archiveAnnouncement = async (id: string) => {
   if (!client) return;
 
   const { error } = await client.from('announcements').update({ active: false, updated_at: todayIso() }).eq('id', id);
-  if (error) throw error;
+  if (error && !isOptionalSupabaseTableError(error, 'announcements')) throw error;
 };
 
 export const loadBestSellerCounts = async () => {
@@ -302,16 +313,6 @@ export const deleteProductRemote = async (id: string) => {
   if (error) throw error;
 };
 
-const isMissingRealtimeTableError = (error: unknown) => {
-  if (!error || typeof error !== 'object') return false;
-  const maybeError = error as { code?: string; message?: string };
-  return (
-    maybeError.code === '42P01' ||
-    maybeError.code === 'PGRST205' ||
-    maybeError.message?.toLowerCase().includes('transactions') === true
-  );
-};
-
 export const recordSale = async (sale: Sale, updatedProducts: Product[]) => {
   const client = supabase;
   if (!client) return;
@@ -364,7 +365,7 @@ export const recordSale = async (sale: Sale, updatedProducts: Product[]) => {
   };
 
   const { error: transactionError } = await client.from('transactions').insert(transactionPayload);
-  if (transactionError && !isMissingRealtimeTableError(transactionError)) throw transactionError;
+  if (transactionError && !isOptionalSupabaseTableError(transactionError, 'transactions')) throw transactionError;
 };
 
 export const seedRemoteData = async () => {
