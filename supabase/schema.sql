@@ -142,6 +142,50 @@ create table if not exists public.inventory_movements (
   created_at timestamptz not null default now()
 );
 
+-- Upgrade-safe column backfill for projects that ran an older schema.
+alter table public.users_roles
+  add column if not exists role public.app_role not null default 'kasir',
+  add column if not exists full_name text not null default '',
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'users_roles'
+      and column_name = 'role'
+      and udt_name <> 'app_role'
+  ) then
+    update public.users_roles
+    set role = 'kasir'
+    where role::text not in ('owner', 'admin', 'kasir');
+
+    alter table public.users_roles
+      alter column role type public.app_role using role::text::public.app_role,
+      alter column role set default 'kasir';
+  end if;
+end $$;
+
+update public.users_roles
+set
+  role = coalesce(role, 'kasir'::public.app_role),
+  full_name = coalesce(full_name, ''),
+  created_at = coalesce(created_at, now()),
+  updated_at = coalesce(updated_at, now());
+
+alter table public.users_roles
+  alter column role set default 'kasir',
+  alter column role set not null,
+  alter column full_name set default '',
+  alter column full_name set not null,
+  alter column created_at set default now(),
+  alter column created_at set not null,
+  alter column updated_at set default now(),
+  alter column updated_at set not null;
+
 alter table public.sales
   add column if not exists transaction_status text not null default 'Sukses',
   add column if not exists created_by uuid references auth.users(id) on delete set null default auth.uid();
@@ -154,6 +198,33 @@ alter table public.sale_items
 
 alter table public.inventory_movements
   add column if not exists created_by uuid references auth.users(id) on delete set null default auth.uid();
+
+alter table public.transactions
+  add column if not exists sale_id uuid references public.sales(id) on delete set null,
+  add column if not exists customer_name text not null default 'Pelanggan Umum',
+  add column if not exists subtotal numeric(12, 2) not null default 0,
+  add column if not exists discount numeric(12, 2) not null default 0,
+  add column if not exists tax numeric(12, 2) not null default 0,
+  add column if not exists total numeric(12, 2) not null default 0,
+  add column if not exists paid numeric(12, 2) not null default 0,
+  add column if not exists change numeric(12, 2) not null default 0,
+  add column if not exists payment_method text not null default 'Tunai',
+  add column if not exists payment_status text not null default 'Lunas',
+  add column if not exists transaction_status text not null default 'Sukses',
+  add column if not exists cashier text not null default 'Kasir',
+  add column if not exists notes text not null default '',
+  add column if not exists items jsonb not null default '[]'::jsonb,
+  add column if not exists created_by uuid references auth.users(id) on delete set null default auth.uid(),
+  add column if not exists created_at timestamptz not null default now();
+
+alter table public.announcements
+  add column if not exists message text not null default '',
+  add column if not exists active boolean not null default true,
+  add column if not exists expires_at timestamptz,
+  add column if not exists created_by uuid references auth.users(id) on delete set null default auth.uid(),
+  add column if not exists created_by_role public.app_role,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -705,3 +776,5 @@ on conflict (sku) do nothing;
 -- insert into public.users_roles (user_id, role, full_name)
 -- values ('PASTE_AUTH_USER_ID_HERE', 'owner', 'Nama Owner')
 -- on conflict (user_id) do update set role = excluded.role, full_name = excluded.full_name;
+
+notify pgrst, 'reload schema';
