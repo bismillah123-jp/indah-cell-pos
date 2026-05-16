@@ -7,6 +7,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 export default defineConfig({
   plugins: [react(), VitePWA({
     registerType: 'autoUpdate',
+    injectRegister: 'auto',
     includeAssets: ['favicon.svg', 'pwa-192.svg', 'pwa-512.svg'],
     manifest: {
       name: 'Indah Cell POS',
@@ -34,6 +35,9 @@ export default defineConfig({
       ],
     },
     workbox: {
+      skipWaiting: true,
+      clientsClaim: true,
+      cleanupOutdatedCaches: true,
       navigateFallback: '/index.html',
       globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
     },
