@@ -8,6 +8,8 @@ exception
 end $$;
 
 create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
 
 create table if not exists public.users_roles (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -249,7 +251,8 @@ as $$
   limit 1
 $$;
 
-revoke all on function private.current_user_role() from public, anon, authenticated;
+revoke all on function private.current_user_role() from public, anon;
+grant execute on function private.current_user_role() to authenticated;
 
 create or replace function private.guard_product_kasir_update()
 returns trigger
