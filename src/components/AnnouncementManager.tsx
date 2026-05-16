@@ -7,8 +7,8 @@ type DurationUnit = 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months
 type AnnouncementManagerProps = {
   announcements: Announcement[];
   saving: boolean;
-  onCreate: (message: string, expiresAt: string | null) => Promise<void> | void;
-  onArchive: (id: string) => Promise<void> | void;
+  onCreate: (message: string, expiresAt: string | null) => Promise<boolean | void> | boolean | void;
+  onArchive: (id: string) => Promise<boolean | void> | boolean | void;
 };
 
 const unitOptions: Array<{ value: DurationUnit; label: string; multiplier: number }> = [
@@ -42,7 +42,8 @@ export const AnnouncementManager = ({ announcements, saving, onCreate, onArchive
   const submitAnnouncement = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!message.trim()) return;
-    await onCreate(message.trim(), expiresAt);
+    const created = await onCreate(message.trim(), expiresAt);
+    if (created === false) return;
     setMessage('');
     setDurationValue(1);
     setDurationUnit('days');

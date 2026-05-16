@@ -135,6 +135,9 @@ const parseTransactionItems = (items: unknown): Array<{ product_id?: string | nu
   }
 };
 
+const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error && error.message ? error.message : fallback;
+
 const countTransactionItems = (items: unknown) =>
   parseTransactionItems(items).reduce<Record<string, number>>((scores, item) => {
     if (!item.product_id) return scores;
@@ -580,8 +583,7 @@ const App = () => {
       await recordSale(sale, changedProducts);
       setConnection((current) => ({ ...current, error: undefined }));
     } catch (error) {
-      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal sinkron Supabase.' });
-      showToast('Tersimpan lokal, Supabase gagal sinkron.');
+      showToast(`Checkout tersimpan lokal, Supabase gagal: ${errorMessage(error, 'Gagal sinkron Supabase.')}`);
     }
 
     commitData(nextData);
@@ -622,7 +624,7 @@ const App = () => {
     try {
       await saveProduct(clean);
     } catch (error) {
-      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal simpan produk.' });
+      showToast(`Produk belum tersinkron ke Supabase: ${errorMessage(error, 'Gagal simpan produk.')}`);
     }
   };
 
@@ -631,7 +633,7 @@ const App = () => {
     try {
       await deleteProductRemote(product.id);
     } catch (error) {
-      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal hapus produk.' });
+      showToast(`Hapus produk belum tersinkron ke Supabase: ${errorMessage(error, 'Gagal hapus produk.')}`);
     }
   };
 
@@ -640,10 +642,10 @@ const App = () => {
     commitData({ ...data, settings });
     try {
       await saveSettings(settings);
+      showToast('Setting disimpan.');
     } catch (error) {
-      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal simpan setting.' });
+      showToast(`Setting belum tersinkron ke Supabase: ${errorMessage(error, 'Gagal simpan setting.')}`);
     }
-    showToast('Setting disimpan.');
   };
 
   const createAnnouncement = async (message: string, expiresAt: string | null) => {
@@ -659,24 +661,27 @@ const App = () => {
     };
 
     setSavingAnnouncement(true);
-    setAnnouncements((current) => [announcement, ...current].filter((item) => isAnnouncementActive(item)));
     try {
       await saveAnnouncement(announcement);
+      setAnnouncements((current) => [announcement, ...current].filter((item) => isAnnouncementActive(item)));
       showToast('Pengumuman dipublikasikan.');
+      return true;
     } catch (error) {
-      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal simpan pengumuman.' });
-      showToast('Pengumuman tersimpan lokal, Supabase gagal sinkron.');
+      showToast(`Pengumuman gagal dikirim ke Supabase: ${errorMessage(error, 'Gagal simpan pengumuman.')}`);
+      return false;
     } finally {
       setSavingAnnouncement(false);
     }
   };
 
   const hideAnnouncement = async (id: string) => {
-    setAnnouncements((current) => current.filter((announcement) => announcement.id !== id));
     try {
       await archiveAnnouncement(id);
+      setAnnouncements((current) => current.filter((announcement) => announcement.id !== id));
+      return true;
     } catch (error) {
-      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal arsip pengumuman.' });
+      showToast(`Pengumuman gagal diarsipkan: ${errorMessage(error, 'Gagal arsip pengumuman.')}`);
+      return false;
     }
   };
 
@@ -688,8 +693,7 @@ const App = () => {
       await saveUserRole(clean);
       showToast('Role disimpan.');
     } catch (error) {
-      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal simpan role.' });
-      showToast('Role gagal disinkronkan.');
+      showToast(`Role gagal disinkronkan: ${errorMessage(error, 'Gagal simpan role.')}`);
     } finally {
       setSavingRole(false);
     }
@@ -701,7 +705,7 @@ const App = () => {
       await deleteUserRoleRemote(userId);
       showToast('Role dihapus.');
     } catch (error) {
-      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal hapus role.' });
+      showToast(`Role gagal dihapus di Supabase: ${errorMessage(error, 'Gagal hapus role.')}`);
     }
   };
 

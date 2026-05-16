@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 import type { Announcement, AppData, Customer, Expense, Product, Sale, ShopSettings, UserRoleRecord } from '../types';
 
 const LOCAL_KEY = 'indah-cell-pos-data-v1';
-const LOCAL_ANNOUNCEMENTS_KEY = 'indah-cell-pos-announcements-v1';
+const LEGACY_LOCAL_ANNOUNCEMENTS_KEY = 'indah-cell-pos-announcements-v1';
 
 type LoadResult = {
   data: AppData;
@@ -59,20 +59,8 @@ export const writeLocalData = (data: AppData) => {
 export const isAnnouncementActive = (announcement: Announcement, now = new Date()) =>
   announcement.active && (!announcement.expires_at || new Date(announcement.expires_at).getTime() > now.getTime());
 
-export const readLocalAnnouncements = (): Announcement[] => {
-  const raw = localStorage.getItem(LOCAL_ANNOUNCEMENTS_KEY);
-  if (!raw) return [];
-
-  try {
-    const parsed = JSON.parse(raw) as Announcement[];
-    return parsed.filter((announcement) => isAnnouncementActive(announcement));
-  } catch {
-    return [];
-  }
-};
-
-export const writeLocalAnnouncements = (announcements: Announcement[]) => {
-  localStorage.setItem(LOCAL_ANNOUNCEMENTS_KEY, JSON.stringify(announcements));
+const clearLegacyAnnouncementCache = () => {
+  localStorage.removeItem(LEGACY_LOCAL_ANNOUNCEMENTS_KEY);
 };
 
 const sanitizeProduct = (product: Product) => ({
@@ -169,8 +157,9 @@ export const loadData = async (): Promise<LoadResult> => {
 };
 
 export const loadActiveAnnouncements = async () => {
+  clearLegacyAnnouncementCache();
   const client = supabase;
-  if (!client) return readLocalAnnouncements();
+  if (!client) return [];
 
   const { data, error } = await client
     .from('announcements')
@@ -179,35 +168,28 @@ export const loadActiveAnnouncements = async () => {
     .order('created_at', { ascending: false })
     .limit(20);
 
-  if (error) return readLocalAnnouncements();
+  if (error) return [];
 
   const announcements = ((data ?? []) as Announcement[]).filter((announcement) => isAnnouncementActive(announcement));
-  writeLocalAnnouncements(announcements);
   return announcements;
 };
 
 export const saveAnnouncement = async (announcement: Announcement) => {
-  const current = readLocalAnnouncements();
-  writeLocalAnnouncements([announcement, ...current.filter((item) => item.id !== announcement.id)]);
-
+  clearLegacyAnnouncementCache();
   const client = supabase;
-  if (!client) return;
+  if (!client) throw new Error('Supabase belum dikonfigurasi.');
 
   const { error } = await client.from('announcements').insert(announcement);
-  if (error && !isOptionalSupabaseTableError(error, 'announcements')) throw error;
+  if (error) throw error;
 };
 
 export const archiveAnnouncement = async (id: string) => {
-  const current = readLocalAnnouncements().map((announcement) =>
-    announcement.id === id ? { ...announcement, active: false, updated_at: todayIso() } : announcement,
-  );
-  writeLocalAnnouncements(current);
-
+  clearLegacyAnnouncementCache();
   const client = supabase;
-  if (!client) return;
+  if (!client) throw new Error('Supabase belum dikonfigurasi.');
 
   const { error } = await client.from('announcements').update({ active: false, updated_at: todayIso() }).eq('id', id);
-  if (error && !isOptionalSupabaseTableError(error, 'announcements')) throw error;
+  if (error) throw error;
 };
 
 export const loadBestSellerCounts = async () => {
