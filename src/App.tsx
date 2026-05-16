@@ -29,6 +29,7 @@ import { LoginPage } from './components/LoginPage';
 import { MiniBarChart } from './components/MiniBarChart';
 import { ProductModal } from './components/ProductModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { RoleManager } from './components/RoleManager';
 import { SalesRealtimePopup } from './components/SalesRealtimePopup';
 import { StatCard } from './components/StatCard';
 import { paymentMethods, productTabs, saleStatuses, statusTone } from './constants';
@@ -36,17 +37,20 @@ import { createDefaultData, uuid } from './data/seed';
 import { useAuthRole } from './hooks/useAuthRole';
 import {
   archiveAnnouncement,
+  deleteUserRoleRemote,
   deleteProductRemote,
   exportJson,
   isAnnouncementActive,
   loadActiveAnnouncements,
   loadBestSellerCounts,
   loadData,
+  loadUserRoles,
   recordSale,
   resetLocalDemo,
   saveAnnouncement,
   saveProduct,
   saveSettings,
+  saveUserRole,
   todayIso,
   writeLocalData,
 } from './lib/repository';
@@ -66,6 +70,7 @@ import type {
   SalesPopup,
   ShopSettings,
   UserRole,
+  UserRoleRecord,
 } from './types';
 import {
   digitalPlaceholder,
@@ -167,6 +172,8 @@ const App = () => {
   const [toast, setToast] = useState('');
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
+  const [userRoles, setUserRoles] = useState<UserRoleRecord[]>([]);
+  const [savingRole, setSavingRole] = useState(false);
   const [bestSellerCounts, setBestSellerCounts] = useState<Record<string, number>>({});
   const [salesPopups, setSalesPopups] = useState<SalesPopup[]>([]);
 
@@ -192,20 +199,21 @@ const App = () => {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const popupTimersRef = useRef<number[]>([]);
+  const realtimeSyncTimerRef = useRef<number | null>(null);
   const countedTransactionIdsRef = useRef<Set<string>>(new Set());
   const cart = useCart(data.products, data.settings.tax_rate);
 
-  const showToast = (message: string) => {
+  const showToast = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(''), 2600);
-  };
+  }, []);
 
   const commitData = (next: AppData) => {
     setData(next);
     writeLocalData(next);
   };
 
-  const refreshBestSellerCounts = async (sales: Sale[]) => {
+  const refreshBestSellerCounts = useCallback(async (sales: Sale[]) => {
     const localCounts = calculateBestSellerCounts(sales);
     setBestSellerCounts(localCounts);
 
@@ -213,17 +221,26 @@ const App = () => {
 
     const remoteCounts = await loadBestSellerCounts();
     if (Object.keys(remoteCounts).length) setBestSellerCounts(remoteCounts);
-  };
+  }, []);
 
-  const refreshData = async () => {
-    const [result, activeAnnouncements] = await Promise.all([loadData(), loadActiveAnnouncements()]);
+  const syncRemoteState = useCallback(async (showSuccess = false) => {
+    const [result, activeAnnouncements, roles] = await Promise.all([
+      loadData(),
+      loadActiveAnnouncements(),
+      loadUserRoles(),
+    ]);
     setData(result.data);
     setSettingsDraft(result.data.settings);
     setConnection({ source: result.source, error: result.error });
     setSelectedCustomerId(result.data.customers[0]?.id ?? '');
     setAnnouncements(activeAnnouncements.filter((announcement) => isAnnouncementActive(announcement)));
+    setUserRoles(roles);
     await refreshBestSellerCounts(result.data.sales);
-    showToast('Data dimuat ulang.');
+    if (showSuccess) showToast('Data dimuat ulang.');
+  }, [refreshBestSellerCounts, showToast]);
+
+  const refreshData = async () => {
+    await syncRemoteState(true);
   };
 
   useEffect(() => {
@@ -236,15 +253,9 @@ const App = () => {
     let alive = true;
     setLoading(true);
 
-    Promise.all([loadData(), loadActiveAnnouncements()])
-      .then(async ([result, activeAnnouncements]) => {
+    syncRemoteState()
+      .then(() => {
         if (!alive) return;
-        setData(result.data);
-        setSettingsDraft(result.data.settings);
-        setConnection({ source: result.source, error: result.error });
-        setSelectedCustomerId(result.data.customers[0]?.id ?? '');
-        setAnnouncements(activeAnnouncements.filter((announcement) => isAnnouncementActive(announcement)));
-        await refreshBestSellerCounts(result.data.sales);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -253,7 +264,7 @@ const App = () => {
     return () => {
       alive = false;
     };
-  }, [auth.loading, auth.session?.user.id]);
+  }, [auth.loading, auth.session?.user.id, syncRemoteState]);
 
   useEffect(() => {
     if (activeView !== currentView) setActiveView(currentView);
@@ -362,32 +373,57 @@ const App = () => {
     popupTimersRef.current.push(timer);
   }, []);
 
+  const scheduleRealtimeSync = useCallback(() => {
+    if (realtimeSyncTimerRef.current) window.clearTimeout(realtimeSyncTimerRef.current);
+    realtimeSyncTimerRef.current = window.setTimeout(() => {
+      realtimeSyncTimerRef.current = null;
+      void syncRemoteState(false);
+    }, 450);
+  }, [syncRemoteState]);
+
   useEffect(() => {
     return () => {
       popupTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      if (realtimeSyncTimerRef.current) window.clearTimeout(realtimeSyncTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
     const client = supabase;
-    if (!client || !auth.session || !managerRoles.includes(appRole)) return;
+    if (!client || !auth.session) return;
 
-    const channel = client
-      .channel('indah-cell-transaction-popups')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, (payload) => {
+    const realtimeTables = [
+      'products',
+      'settings',
+      'announcements',
+      'sales',
+      'sale_items',
+      'transactions',
+      'users_roles',
+    ];
+
+    let channel = client.channel('indah-cell-live-sync');
+    realtimeTables.forEach((table) => {
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+        const isInsert = 'eventType' in payload && payload.eventType === 'INSERT';
         const row = payload.new as TransactionRealtimeRow;
-        pushSalesPopup(row);
-        if (!row.id || !countedTransactionIdsRef.current.has(row.id)) {
+        if (table === 'transactions' && isInsert && managerRoles.includes(appRole)) {
+          pushSalesPopup(row);
+        }
+        if (table === 'transactions' && isInsert && (!row.id || !countedTransactionIdsRef.current.has(row.id))) {
           if (row.id) countedTransactionIdsRef.current.add(row.id);
           mergeBestSellerCounts(countTransactionItems(row.items));
         }
-      })
-      .subscribe();
+        scheduleRealtimeSync();
+      });
+    });
+
+    channel.subscribe();
 
     return () => {
       void client.removeChannel(channel);
     };
-  }, [appRole, auth.session, mergeBestSellerCounts, pushSalesPopup]);
+  }, [appRole, auth.session, mergeBestSellerCounts, pushSalesPopup, scheduleRealtimeSync]);
 
   const handleProductClick = (product: Product) => {
     if (product.type === 'stock' && product.stock <= 0) {
@@ -635,6 +671,31 @@ const App = () => {
       await archiveAnnouncement(id);
     } catch (error) {
       setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal arsip pengumuman.' });
+    }
+  };
+
+  const persistUserRole = async (record: UserRoleRecord) => {
+    const clean = { ...record, updated_at: todayIso() };
+    setSavingRole(true);
+    setUserRoles((current) => [clean, ...current.filter((item) => item.user_id !== clean.user_id)]);
+    try {
+      await saveUserRole(clean);
+      showToast('Role disimpan.');
+    } catch (error) {
+      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal simpan role.' });
+      showToast('Role gagal disinkronkan.');
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
+  const deleteUserRole = async (userId: string) => {
+    setUserRoles((current) => current.filter((role) => role.user_id !== userId));
+    try {
+      await deleteUserRoleRemote(userId);
+      showToast('Role dihapus.');
+    } catch (error) {
+      setConnection({ source: 'local', error: error instanceof Error ? error.message : 'Gagal hapus role.' });
     }
   };
 
@@ -1132,6 +1193,15 @@ const App = () => {
                 saving={savingAnnouncement}
                 onCreate={createAnnouncement}
                 onArchive={hideAnnouncement}
+              />
+            )}
+
+            {appRole === 'owner' && (
+              <RoleManager
+                roles={userRoles}
+                saving={savingRole}
+                onSave={persistUserRole}
+                onDelete={deleteUserRole}
               />
             )}
           </div>

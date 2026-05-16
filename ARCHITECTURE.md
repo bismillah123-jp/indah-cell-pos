@@ -33,7 +33,7 @@ src/
 
 ## Database Architecture
 
-Use `supabase/schema.sql`.
+Use `supabase-schema.sql` for the complete Auth/RBAC/Realtime schema.
 
 Core tables:
 
@@ -44,12 +44,16 @@ Core tables:
 - `expenses`: operational expense tracking.
 - `settings`: shop profile and receipt configuration.
 - `inventory_movements`: future-ready stock movement audit.
+- `users_roles`: RBAC mapping for owner, admin, kasir.
+- `announcements`: running text with expiration.
+- `transactions`: realtime sales notification and best-seller source.
 
 Important Supabase notes:
 
 - RLS is enabled on public tables.
 - `anon` and `authenticated` are granted table access because new Supabase projects may not expose tables to the Data API automatically.
-- Current demo policy is permissive for a single-store POS. For production multi-user, replace policies with Auth-based rules.
+- RBAC policies protect cashier writes, owner-only role management, and manager-only operational settings.
+- Realtime publication covers operational tables so clients can sync automatically without manual refresh.
 
 ## Feature Map
 

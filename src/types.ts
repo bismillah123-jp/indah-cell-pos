@@ -114,6 +114,14 @@ export interface SalesPopup {
   created_at: string;
 }
 
+export interface UserRoleRecord {
+  user_id: string;
+  role: UserRole;
+  full_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CartItem {
   cart_id: string;
   product_id: string | null;

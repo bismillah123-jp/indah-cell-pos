@@ -1,6 +1,6 @@
 import { createDefaultData, defaultSettings, seedProducts, uuid } from '../data/seed';
 import { supabase } from './supabase';
-import type { Announcement, AppData, Customer, Expense, Product, Sale, ShopSettings } from '../types';
+import type { Announcement, AppData, Customer, Expense, Product, Sale, ShopSettings, UserRoleRecord } from '../types';
 
 const LOCAL_KEY = 'indah-cell-pos-data-v1';
 const LOCAL_ANNOUNCEMENTS_KEY = 'indah-cell-pos-announcements-v1';
@@ -221,6 +221,35 @@ export const loadBestSellerCounts = async () => {
     });
     return scores;
   }, {});
+};
+
+export const loadUserRoles = async () => {
+  const client = supabase;
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from('users_roles')
+    .select('*')
+    .order('updated_at', { ascending: false });
+
+  if (error) return [];
+  return (data ?? []) as UserRoleRecord[];
+};
+
+export const saveUserRole = async (record: UserRoleRecord) => {
+  const client = supabase;
+  if (!client) return;
+
+  const { error } = await client.from('users_roles').upsert(record, { onConflict: 'user_id' });
+  if (error) throw error;
+};
+
+export const deleteUserRoleRemote = async (userId: string) => {
+  const client = supabase;
+  if (!client) return;
+
+  const { error } = await client.from('users_roles').delete().eq('user_id', userId);
+  if (error) throw error;
 };
 
 export const saveProduct = async (product: Product) => {

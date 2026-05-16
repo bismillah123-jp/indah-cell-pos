@@ -419,14 +419,40 @@ on public.inventory_movements for insert
 to authenticated
 with check (private.current_user_role() in ('owner'::public.app_role, 'admin'::public.app_role));
 
+alter table public.products replica identity full;
+alter table public.customers replica identity full;
+alter table public.sales replica identity full;
+alter table public.sale_items replica identity full;
 alter table public.transactions replica identity full;
+alter table public.announcements replica identity full;
+alter table public.expenses replica identity full;
+alter table public.settings replica identity full;
+alter table public.inventory_movements replica identity full;
+alter table public.users_roles replica identity full;
 
 do $$
+declare
+  realtime_table text;
 begin
-  alter publication supabase_realtime add table public.transactions;
-exception
-  when duplicate_object then null;
-  when undefined_object then null;
+  foreach realtime_table in array array[
+    'products',
+    'customers',
+    'sales',
+    'sale_items',
+    'transactions',
+    'announcements',
+    'expenses',
+    'settings',
+    'inventory_movements',
+    'users_roles'
+  ] loop
+    begin
+      execute format('alter publication supabase_realtime add table public.%I', realtime_table);
+    exception
+      when duplicate_object then null;
+      when undefined_object then null;
+    end;
+  end loop;
 end $$;
 
 insert into public.settings (id, shop_name, address, phone, cashier_name, tax_rate, receipt_footer)
