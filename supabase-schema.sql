@@ -180,10 +180,46 @@ $$;
 
 revoke all on function private.current_user_role() from public, anon, authenticated;
 
+create or replace function private.guard_product_kasir_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, private
+as $$
+begin
+  if private.current_user_role() = 'kasir'::public.app_role then
+    if
+      new.id is distinct from old.id or
+      new.sku is distinct from old.sku or
+      new.name is distinct from old.name or
+      new.category is distinct from old.category or
+      new.type is distinct from old.type or
+      new.price is distinct from old.price or
+      new.cost is distinct from old.cost or
+      new.min_stock is distinct from old.min_stock or
+      new.unit is distinct from old.unit or
+      new.active is distinct from old.active or
+      new.created_at is distinct from old.created_at
+    then
+      raise exception 'Kasir hanya boleh mengubah stok produk saat checkout.';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function private.guard_product_kasir_update() from public, anon, authenticated;
+
 drop trigger if exists products_set_updated_at on public.products;
 create trigger products_set_updated_at
 before update on public.products
 for each row execute function public.set_updated_at();
+
+drop trigger if exists products_guard_kasir_update on public.products;
+create trigger products_guard_kasir_update
+before update on public.products
+for each row execute function private.guard_product_kasir_update();
 
 drop trigger if exists announcements_set_updated_at on public.announcements;
 create trigger announcements_set_updated_at
@@ -280,8 +316,8 @@ drop policy if exists "products_update_managers" on public.products;
 create policy "products_update_managers"
 on public.products for update
 to authenticated
-using (private.current_user_role() in ('owner'::public.app_role, 'admin'::public.app_role))
-with check (private.current_user_role() in ('owner'::public.app_role, 'admin'::public.app_role));
+using (private.current_user_role() in ('owner'::public.app_role, 'admin'::public.app_role, 'kasir'::public.app_role))
+with check (private.current_user_role() in ('owner'::public.app_role, 'admin'::public.app_role, 'kasir'::public.app_role));
 
 drop policy if exists "products_delete_managers" on public.products;
 create policy "products_delete_managers"
