@@ -862,7 +862,7 @@ const App = () => {
             </div>
           </section>
 
-          <aside className="panel xl:sticky xl:top-24">
+          <aside className="panel flex flex-col overflow-hidden xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)]">
             <div className="border-b border-earth-200 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -885,7 +885,7 @@ const App = () => {
               )}
             </div>
 
-            <div className="grid max-h-[calc(100vh-11rem)] gap-4 overflow-y-auto p-4">
+            <div className="grid min-h-0 gap-4 overflow-y-auto p-4 pb-28 xl:flex-1 xl:pb-4">
               <div className="grid gap-3 rounded-2xl border border-earth-200 bg-earth-50 p-3">
                 <div className="grid grid-cols-[1fr_110px_40px] gap-2">
                   <input className="input" value={quickName} onChange={(event) => setQuickName(event.target.value)} placeholder="Item cepat" />
@@ -1001,9 +1001,12 @@ const App = () => {
                 </div>
               </div>
 
+            </div>
+
+            <div className="sticky bottom-20 z-20 shrink-0 border-t border-earth-200 bg-white/95 p-4 backdrop-blur md:bottom-0 xl:static">
               <div className="grid gap-2">
                 <button className="btn-primary min-h-12 text-base" onClick={() => checkout()}>
-                  <ReceiptText size={19} /> Simpan & Cetak Struk
+                  <ReceiptText size={19} /> Pay
                 </button>
                 <div className="grid grid-cols-2 gap-2">
                   <button className="btn-soft" onClick={() => checkout({ method: 'QRIS', status: 'Sukses', paid: cart.totals.total })}><QrCode size={17} /> QRIS</button>
